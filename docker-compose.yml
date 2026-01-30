@@ -1,27 +1,104 @@
 services:
+  # --- MONGODB (Se queda igual) ---
   mongodb:
     image: mongo:latest
     container_name: market_pulse_db
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password123
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password123
     volumes:
       - mongo_data:/data/db
 
-  mongo-express:
-    image: mongo-express:latest
-    container_name: market_pulse_ui
-    depends_on:
-      - mongodb
-    ports:
-      - "8081:8081"
+  # --- POSTGRES (Añadimos Healthcheck) ---
+  postgres:
+    image: postgres:13
+    container_name: airflow_postgres
     environment:
-      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
-      - ME_CONFIG_MONGODB_ADMINPASSWORD=password123
-      - ME_CONFIG_MONGODB_URL=mongodb://admin:password123@mongodb:27017/
-      - ME_CONFIG_BASICAUTH_USERNAME=admin
-      - ME_CONFIG_BASICAUTH_PASSWORD=password123
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    image: apache/airflow:2.7.1
+    container_name: airflow_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW_UID=0
+    volumes:
+      - ./airflow:/opt/airflow
+    # Usamos una cadena simple para el entrypoint para evitar errores de parseo
+    entrypoint: /bin/bash
+    command: 
+      - -c
+      - "airflow db migrate && airflow users create --username airflow --password airflow --firstname Admin --lastname User --role Admin --email admin@example.com"
+
+# --- AIRFLOW WEBSERVER ---
+  airflow-webserver:
+    image: apache/airflow:2.7.1
+    container_name: airflow_webserver
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - _PIP_ADDITIONAL_REQUIREMENTS=pymongo requests pandas
+      - AIRFLOW_UID=0
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+    ports:
+      - "8080:8080"
+    # IMPORTANTE: El comando debe ser exacto
+    command: webserver
+
+  # --- AIRFLOW SCHEDULER ---
+  airflow-scheduler:
+    image: apache/airflow:2.7.1
+    container_name: airflow_scheduler
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - _PIP_ADDITIONAL_REQUIREMENTS=pymongo requests pandas
+      - AIRFLOW_UID=0
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+    # IMPORTANTE: El comando debe ser exacto
+    command: scheduler
+
+  mongo-express:
+      image: mongo-express:latest
+      container_name: market_pulse_ui
+      restart: always
+      ports:
+        - "8081:8081"
+      environment:
+        # Conexión simplificada usando el nombre del servicio
+        - ME_CONFIG_MONGODB_URL=mongodb://admin:password123@mongodb:27017/
+        - ME_CONFIG_BASICAUTH_USERNAME=admin
+        - ME_CONFIG_BASICAUTH_PASSWORD=password123
+      depends_on:
+        - mongodb
+
 volumes:
   mongo_data:
