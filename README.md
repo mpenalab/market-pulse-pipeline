@@ -45,6 +45,6 @@ python src/ingestion/ingestor.py
 * **Credenciales: Usuario:** admin | Contraseña: password123
 
 ## 📂 Estructura del Proyecto
-* **src/ingestion/:* Scripts de extracción de datos.
-* **data/raw/:* Archivos JSON históricos extraídos de la API.
-* **docker-compose.yml:* Definición de los servicios de infraestructura.
+* *src/ingestion/:* Scripts de extracción de datos.
+* *data/raw/:* Archivos JSON históricos extraídos de la API.
+* *docker-compose.yml:* Definición de los servicios de infraestructura.
